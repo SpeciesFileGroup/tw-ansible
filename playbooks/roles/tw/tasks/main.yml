@@ -1,0 +1,363 @@
+---
+- name: Remove docker packages from Ubuntu repository
+  apt:
+    update_cache: yes
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - docker.io
+    - docker-compose
+    - docker-compose-v2
+    - docker-doc
+    - podman-docker
+
+- name: Install required packages
+  apt:
+    update_cache: yes
+    name: "{{ item }}"
+    state: present
+  loop:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - git
+    - software-properties-common
+    - unzip
+
+- name: Add Docker GPG key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Add Docker apt repository
+  apt_repository:
+    repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu oracular stable
+    state: present
+
+- name: Update package index
+  apt:
+    update_cache: yes
+
+- name: Install docker packages from docker repository
+  apt:
+    update_cache: yes
+    name: "{{ item }}"
+    state: present
+  loop:
+    - docker-ce
+    - docker-ce-cli
+    - containerd.io
+    - docker-buildx-plugin
+    - docker-compose-plugin
+
+- name: Enable docker service
+  systemd:
+    name: docker.service
+    enabled: yes
+
+- name: Start docker
+  service:
+    name: docker.service
+    state: started
+
+- name: Add alias for docker-compose
+  lineinfile:
+    path: /home/tw/.bashrc
+    line: "alias docker-compose='docker compose'"
+    state: present
+
+- name: Add alias for rails
+  lineinfile:
+    path: /home/tw/.bashrc
+    line: "alias rails='docker exec -it app-tw-1 bin/rails'"
+    state: present
+
+- name: Add alias for rake
+  lineinfile:
+    path: /home/tw/.bashrc
+    line: "alias rake='docker exec -it app-tw-1 bin/rake'"
+    state: present
+
+# We still want files like .bashrc to be in /home/tw not the /app directory
+#  but cd'ing to /app after login seems useful
+- name: Change directory to /app
+  become: true
+  become_user: tw
+  lineinfile:
+    path: /home/tw/.bashrc
+    line: "cd /app"
+    state: present
+    insertafter: EOF
+
+- name: Set ownership of app directory to tw:tw
+  become: true
+  become_user: root
+  file:
+    path: /app
+    owner: tw
+    group: tw
+    state: directory
+    
+- name: Check if the taxonworks repo was cloned already
+  stat: 
+    path: /app/.git
+  register: dir_stat
+
+- name: Clone taxonworks repository 
+  become: true
+  become_user: tw
+  git:
+    repo: https://github.com/speciesfilegroup/taxonworks.git
+    dest: /app
+    clone: yes
+    update: yes
+  when: not dir_stat.stat.exists
+
+- name: Checkout taxonworks {{ tw_branch }} branch
+  become: true
+  become_user: tw
+  command: git checkout {{ tw_branch }}
+  args:
+    chdir: /app
+
+- name: Hard reset taxonworks repository (all configs will be repopulated by Ansible)
+  become: true
+  become_user: tw
+  command: git reset --hard
+  args:
+    chdir: /app
+
+- name: Pull taxonworks repository
+  become: true
+  become_user: tw
+  command: git pull
+  args:
+    chdir: /app
+
+- name: Create docker volume directories
+  become: true
+  become_user: root
+  file:
+    path: "{{ item.name }}"
+    state: directory
+    owner: "{{ item.owner | default('tw') }}"
+    group: "{{ item.group | default('tw') }}"
+  loop:
+    - { name: var/lib/taxonworks }
+    - { name: /var/lib/taxonworks/logs }
+    - { name: /var/lib/taxonworks/public }
+    - { name: /var/lib/taxonworks/downloads }
+    - { name: /var/lib/taxonworks/data, owner: 70, group: 70 }
+    - { name: /backups }
+    - { name: /staging }
+
+- name: Check if postgres database already exists
+  become: true
+  become_user: root
+  stat:
+    path: /var/lib/taxonworks/data/PG_VERSION
+  register: pg_database_exists
+
+- name: Set ownership of postgres data directory
+  become: true
+  become_user: root
+  file:
+    path: /var/lib/taxonworks/data
+    owner: 999
+    group: 999
+    state: directory
+
+- name: Copy docker-compose.yml to TaxonWorks directory
+  become: true
+  become_user: tw
+  template:
+    src: docker-compose.yml
+    dest: /app/docker-compose.yml
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
+- name: Remove database.yml
+  become: true
+  become_user: tw
+  file:
+    path: /app/config/database.yml
+    state: absent
+  
+- name: Remove application_settings.yml
+  become: true
+  become_user: tw
+  file:
+    path: /app/config/application_settings.yml
+    state: absent
+  
+- name: Copy database.yml to config directory
+  become: true
+  become_user: tw
+  template:
+    src: database.yml
+    dest: /app/config/database.yml
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
+- name: Copy application_settings.yml to config directory
+  become: true
+  become_user: tw
+  template:
+    src: application_settings.yml
+    dest: /app/config/application_settings.yml
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
+- name: Run docker compose down
+  become: true
+  become_user: tw
+  command: docker compose down
+  args:
+    chdir: /app
+
+- name: Pre-compile assets (this can take a while)
+  become: true
+  become_user: tw
+  command: docker compose run --rm tw bin/rails assets:precompile
+  args:
+    chdir: /app
+
+- name: Run docker compose up (will take a while first run)
+  become: true
+  become_user: tw
+  command: docker compose up -d
+  args:
+    chdir: /app
+
+- name: Wait for TaxonWorks to be up
+  become: true
+  become_user: tw
+  wait_for:
+    port: "{{ tw_port }}"
+    delay: 10
+    timeout: 600
+    state: started
+  register: result
+  until: result is succeeded
+
+- name: Set log ownership
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 chown -R app:app /app/log
+  args:
+    chdir: /app
+
+- name: Set log permissions
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 chmod 644 /app/log/production.log
+  args:
+    chdir: /app
+
+# TODO: Figure out how to check if migrations are running
+- name: Wait for 2 minutes (for database migrations to complete)
+  wait_for:
+    timeout: 120
+
+- name: Unzip initialization data
+  become: true
+  become_user: tw
+  unarchive:
+    copy: yes
+    src: ../initialization_data/tw_initialization_data-master.zip
+    dest: /staging
+  when: enable_initialization_data == true
+
+- name: Check if initialization.rake starts with require 'rainbow/refinement'
+  become: true
+  become_user: tw
+  command: >
+    docker exec -i app-tw-1 grep -q "require 'rainbow/refinement'" /app/lib/tasks/initialize.rake
+  register: fix_initialization_task
+  failed_when: false
+  changed_when: false
+  when: enable_initialization_data == true
+  args:
+    chdir: /app
+
+- name: Fix initialization task
+  become: true
+  become_user: tw
+  command: >
+    docker exec -i app-tw-1 sed -i "1i\require 'rainbow/refinement'\nusing Rainbow\n" /app/lib/tasks/initialize.rake
+  args:
+    chdir: /app
+  when: enable_initialization_data == true and fix_initialization_task != 0
+
+- name: Fix Rainbow in serials.rake
+  become: true
+  become_user: tw
+  command: >
+    docker exec -i app-tw-1 sed -i "1i\require 'rainbow/refinement'\nusing Rainbow\n" /app/lib/tasks/initialize/serials.rake
+  args:
+    chdir: /app
+  when: enable_initialization_data == true
+
+- name: Fix initialization task stdin issue
+  become: true
+  become_user: tw
+  command: >
+    docker exec -i app-tw-1 sed -i "s/STDIN.noecho(&:gets).strip/STDIN.gets.strip/g" /app/lib/tasks/initialize.rake
+  args:
+    chdir: /app
+  when: enable_initialization_data == true
+
+- name: Fix the support database connection_config
+  become: true
+  become_user: tw
+  command: >
+    docker exec -i app-tw-1 sed -i "s/connection_config/connection_db_config.configuration_hash/g" /app/lib/support/database.rb
+  args:
+    chdir: /app
+  when: not pg_database_exists.stat.exists and enable_initialization_data == true
+
+- name: Initialize database (this will take a while)
+  become: true
+  become_user: tw
+  expect:
+    command: docker exec -i app-tw-1 bin/rake tw:initialize:all data_directory=/staging/tw_initialization_data-master/
+    responses:
+      'email: ': "{{ tw_admin.email }}"
+      'name: ': "{{ tw_admin.name }}"
+      'password: ': "{{ tw_admin.password }}"
+      'confirm password: ': "{{ tw_admin.password }}"
+    timeout: 360
+  args:
+    chdir: /app
+  when: not pg_database_exists.stat.exists and enable_initialization_data == true
+
+- name: Connect to rails console and create users
+  become: true
+  become_user: tw
+  command: >
+    docker exec -i app-tw-1 bin/rails runner -e production "User.create!(name: '{{ item.name }}', email: '{{ item.email }}', password: '{{ item.password }}', password_confirmation: '{{ item.password }}', is_administrator: {{ item.admin | lower }}, self_created: true) unless User.find_by(email: '{{ item.email }}');"
+  loop: "{{ tw_users }}"
+  args:
+    chdir: /app
+
+- name: Create cron jobs
+  become: true
+  become_user: root
+  cron:
+    name: "{{ item.name }}"
+    minute: "{{ item.minute }}"
+    hour: "{{ item.hour }}"
+    day: "{{ item.day }}"
+    month: "{{ item.month }}"
+    weekday: "{{ item.weekday }}"
+    job: "{{ item.command }}"
+    user: "{{ item.user }}"
+    cron_file: "/etc/cron.d/{{ item.file_name }}"
+  loop: "{{ cron_jobs }}"
+  when: cron_jobs is defined

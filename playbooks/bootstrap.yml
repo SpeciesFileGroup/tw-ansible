@@ -1,0 +1,6 @@
+- hosts: tw
+  gather_facts: False
+  become: true
+  become_user: root
+  roles:
+    - bootstrap

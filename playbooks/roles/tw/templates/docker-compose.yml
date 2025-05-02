@@ -1,0 +1,66 @@
+services:
+  tw:
+    image: sfgrp/taxonworks:latest
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: {{ tw_cpus_limit }}
+          memory: {{ tw_memory_limit }}
+    environment:
+      - RAILS_ENV=production
+      - SERVER_NAME={{ hostname }}.{{ domain }}
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=taxonworks_production
+      - POSTGRES_USER=taxonworks_production
+      - POSTGRES_PASSWORD={{ postgres_password }}
+      - POSTGRES_POOL_SIZE={{ postgres_pool_size }}
+      - NGINX_SECRET_KEY={{ nginx_secret_key }}
+      - SECRET_KEY_BASE={{ secret_key_base }}
+      - TW_EXCEPTION_NOTIFICATION_EMAIL_PREFIX="[TW-Error] "
+      - TW_EXCEPTION_NOTIFICATION_SENDER_ADDRESS="{{ tw_exception_notification_sender_address }}"
+      - TW_EXCEPTION_RECIPIENTS=gdower@illinois.edu
+      - TW_ACTION_MAILER_SMTP_SETTINGS_ADDRESS={{ tw_action_mailer_smtp_settings_address}}
+      - TW_ACTION_MAILER_SMTP_SETTINGS_PORT={{ tw_action_mailer_smtp_settings_port }}
+      - TW_ACTION_MAILER_SMTP_SETTINGS_DOMAIN={{ tw_action_mailer_smtp_settings_domain }}
+      - TW_ACTION_MAILER_URL_HOST={{ tw_action_mailer_url_host }}
+      - TW_MAIL_DOMAIN={{ tw_mail_domain }}
+      - TW_PATHS_STAGING=/staging
+      - TW_PATHS_BACKUP=/backups
+    healthcheck:
+      test: ["CMD", "exe/docker_health_check.sh", "300", "80"]
+      timeout: 305s
+      interval: 10s
+      retries: 3
+    ports:
+      - '0.0.0.0:80:80'
+      - '0.0.0.0:443:443'
+    links:
+      - db
+    volumes:
+     - /var/lib/taxonworks/logs:/app/log:rw
+     - /var/lib/taxonworks/public:/app/public:rw
+     - /var/lib/taxonworks/downloads:/app/downloads:rw
+     - /var/lib/taxonworks/data:/var/lib/postgresql/data
+     - /backups:/backups:rw
+     - /staging:/staging:rw
+     - /app/config:/app/config:rw
+    stdin_open: true
+    tty: true
+  db:
+    image: postgis/postgis:12-3.4
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: {{ postgres_cpus_limit }}
+          memory: {{ postgres_memory_limit }}
+    shm_size: {{ postgres_shm_size}}
+    environment:
+      - POSTGRES_PASSWORD={{ postgres_password }}
+      - POSTGRES_USER=taxonworks_production
+      - POSTGRES_DB=taxonworks_production
+    ports:
+      - '0.0.0.0:15432:5432'
+    volumes:
+      - /var/lib/taxonworks/data:/var/lib/postgresql/data

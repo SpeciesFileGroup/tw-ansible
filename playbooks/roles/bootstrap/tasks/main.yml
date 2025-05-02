@@ -1,0 +1,106 @@
+---
+- name: Create Linux groups
+  group:
+     name: "{{ item.name }}"
+     state: present
+     system: "{{ item.system }}"
+  loop:
+   - { name: sysadmin, system: false }
+   - { name: docker, system: true }
+
+- name: Create tw group
+  group:
+    name: tw
+    gid: 9999
+    state: present
+    system: false
+
+- name: Create tw user
+  user:
+    name: tw
+    uid: 9999
+    group: 9999
+    groups:
+      - users
+      - docker
+      - sysadmin
+
+- name: Create Linux users
+  user:
+    name: "{{ item.name }}"
+    groups:
+      - users
+      - docker
+      - sysadmin
+    append: yes
+    shell: /bin/bash
+  loop: "{{ linux_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Add SSH authorized keys
+  authorized_key:
+    user: '{{ item.name }}'
+    key: '{{ item.sshkey }}'
+    state: present
+  loop: "{{ linux_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Enable sudo without password
+  lineinfile:
+    dest: /etc/sudoers
+    state: present
+    regexp: '^%sysadmin'
+    line: '%sysadmin ALL=(ALL) NOPASSWD: ALL'
+    validate: 'visudo -cf %s'
+  when: enable_sysadmin_no_sudo_password == true
+
+- name: Reset SSH connection (for group permissions)
+  meta: reset_connection
+
+- name: Copy hosts template
+  template:
+    src: etc_hosts
+    dest: /etc/hosts
+
+- name: Edit hosts file
+  template:
+    src: etc_hostname
+    dest: /etc/hostname
+    backup: false
+
+- name: Set hostname
+  hostname:
+    name: "{{ hostname }}"
+
+- name: Install ufw firewall
+  apt:
+    name: ufw
+    state: present
+  when: enable_firewall == true
+
+- name: Clear all firewall rules
+  ufw:
+    state: reset
+  when: enable_firewall == true
+
+- name: Enable ufw firewall with default deny policy
+  ufw:
+    state: enabled
+    policy: deny
+  when: enable_firewall == true
+
+- name: Allow SSH through firewall
+  ufw:
+    rule: allow
+    port: 22
+    proto: tcp
+  when: enable_firewall == true
+
+- name: Allow TaxonWorks through firewall
+  ufw:
+    rule: allow
+    port: "{{ tw_port }}"
+    proto: tcp
+  when: enable_firewall == true

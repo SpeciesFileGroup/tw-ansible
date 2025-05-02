@@ -1,0 +1,11 @@
+galaxy_info:
+  author: Species File Group
+  description: Sets up a TaxonWorks production instance
+  company: University of Illinois
+
+  license: MIT
+
+  min_ansible_version: 1.2
+  galaxy_tags: []
+
+dependencies: []

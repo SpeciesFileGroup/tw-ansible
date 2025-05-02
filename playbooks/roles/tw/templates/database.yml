@@ -1,0 +1,9 @@
+production:
+  adapter: postgis
+  encoding: utf8 
+  postgis_extension: true
+  pool: 5
+  database: taxonworks_production
+  username: taxonworks_production
+  password: "{{ postgres_password }}"
+  host: db

@@ -1,0 +1,13 @@
+production:
+  backup_directory: "/backups"
+  # exception_notification:
+  #   email_prefix: "{{ tw_exception_notification_email_prefix }}"
+  #   sender_address: "{{ tw_exception_notification_sender_address }}"
+  #   exception_recipients:
+  #     - "{{ tw_exception_recipients }}"
+  # action_mailer_smtp_settings:
+  #   address: "smtp.example.com"
+  #   port: 25
+  #   domain: "{{ tw_mail_domain }}"
+  # mail_domain: "{{ tw_mail_domain }}"
+  # action_mailer_url_host: "{{ tw_action_mailer_url_host }}"

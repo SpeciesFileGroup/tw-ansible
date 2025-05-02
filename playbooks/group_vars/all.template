@@ -1,0 +1,46 @@
+linux_users:
+  - name:
+    sshkey:
+enable_sysadmin_no_sudo_password: false  # Set to true to allow sysadmin group to use sudo without a password
+hostname: 
+domain: 
+tw_memory_limit: 8G  # Memory limit for the TaxonWorks container
+tw_cpus_limit: 4     # Number of CPUs for the TaxonWorks container
+tw_branch: "master"  # (master = production)
+tw_port: 80
+tw_admin:
+  name: 
+  email: 
+  password: 
+tw_users:
+  - name: 
+    email: 
+    password: 
+    admin: true
+enable_firewall: false  # Set to true to configure the firewall (blocks all incoming ports except SSH and TaxonWorks)
+postgres_password: 
+postgres_pool_size: 5
+postgres_cpus_limit: 4
+postgres_memory_limit: 8G
+postgres_shm_size: 8G
+nginx_secret_key: 
+secret_key_base: 
+tw_exception_notification_email_prefix: "[TW-Error] "
+tw_exception_recipients: 
+tw_exception_notification_sender_address: "Notifier <notifier@{{ hostname }}.{{ domain }}>"
+tw_action_mailer_smtp_settings_domain: "{{ hostname }}.{{ domain }}"
+tw_action_mailer_smtp_settings_address: 
+tw_action_mailer_smtp_settings_port: 
+tw_action_mailer_url_host: "{{ hostname }}.{{ domain }}"
+tw_mail_domain: "{{ hostname }}.{{ domain }}"
+enable_initialization_data: false  # see README.md inside the initialization_data directory
+cron_jobs:
+  - name: "TaxonWorks Backup"
+    minute: "21"
+    hour: "0"
+    day: "*"
+    month: "*"
+    weekday: "*"
+    command: "/usr/bin/docker exec -i app-tw-1 /app/bin/rake tw:db:dump  >> /var/lib/taxonworks/logs/backup.log 2>&1"
+    user: "tw"
+    file_name: "tw_pg_backup"

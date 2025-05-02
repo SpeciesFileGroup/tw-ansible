@@ -1,0 +1,12 @@
+*.dump
+*.txt
+*.example
+*.yml
+*.yaml
+*.csv
+*.zip
+*.tar.gz
+*.tar
+*.tgz
+*.tar.xz
+*.tar.bz2
