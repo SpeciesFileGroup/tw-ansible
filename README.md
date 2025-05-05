@@ -91,8 +91,8 @@ ansible-playbook -i ./hosts playbooks/tw.yml --user tw --ask-pass --ask-become-p
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at: https://github.com/SpeciesFileGroup/tw-ansible. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](https://github.com/SpeciesFileGroup/tw-ansible/blob/main/CODE_OF_CONDUCT.md).
+Bug reports and pull requests are welcome on GitHub at: https://github.com/SpeciesFileGroup/tw-ansible. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](https://github.com/SpeciesFileGroup/tw-ansible?tab=coc-ov-file).
 
 ## License
 
-The gem is available as open source under the terms of the [MIT](https://opensource.org/licenses/MIT) license.
+These playbooks are available as open source under the terms of the [MIT](https://opensource.org/licenses/MIT) license.
