@@ -14,6 +14,12 @@ Installing TaxonWorks into production depends on having a dedicated
 that is accessible with an IP address via SSH. You also need a user with sudo permissions 
 on the server.
 
+### ***Warning!*** 
+
+We only recommend running these playbooks on a fresh installation of Ubuntu 24.04 Server 
+with no other applications already installed because the playbooks will change the server configuration in a way that could be incompatible with other applications. Prior to running the playbooks please spend some time studying them to 
+ensure you understand what they do.
+
 ## Playbooks
 
 Currently two playbooks are provided:
@@ -83,3 +89,10 @@ Edit the `playbooks/group_vars/all` file to define the global variables for your
 ansible-playbook -i ./hosts playbooks/tw.yml --user tw --ask-pass --ask-become-pass
 ```
 
+## Contributing
+
+Bug reports and pull requests are welcome on GitHub at: https://github.com/SpeciesFileGroup/tw-ansible. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](https://github.com/SpeciesFileGroup/tw-ansible/blob/main/CODE_OF_CONDUCT.md).
+
+## License
+
+The gem is available as open source under the terms of the [MIT](https://opensource.org/licenses/MIT) license.
