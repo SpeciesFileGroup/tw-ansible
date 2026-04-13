@@ -1,0 +1,137 @@
+---
+- name: Checkout taxonworks {{ tw_branch }} branch
+  become: true
+  become_user: tw
+  command: git checkout {{ tw_branch }}
+  args:
+    chdir: /app
+
+- name: Hard reset taxonworks repository (configs will be repopulated by Ansible)
+  become: true
+  become_user: tw
+  command: git reset --hard
+  args:
+    chdir: /app
+
+- name: Pull latest taxonworks code
+  become: true
+  become_user: tw
+  command: git pull
+  args:
+    chdir: /app
+
+- name: Copy docker-compose.yml to TaxonWorks directory
+  become: true
+  become_user: tw
+  template:
+    src: ../../roles/install/templates/docker-compose.yml
+    dest: /app/docker-compose.yml
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
+- name: Copy database.yml to config directory
+  become: true
+  become_user: tw
+  template:
+    src: ../../roles/install/templates/database.yml
+    dest: /app/config/database.yml
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
+- name: Copy application_settings.yml to config directory
+  become: true
+  become_user: tw
+  template:
+    src: ../../roles/install/templates/application_settings.yml
+    dest: /app/config/application_settings.yml
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
+- name: Pull latest TaxonWorks Docker image
+  become: true
+  become_user: tw
+  command: docker compose pull
+  args:
+    chdir: /app
+
+- name: Stop TaxonWorks containers
+  become: true
+  become_user: tw
+  command: docker compose down
+  args:
+    chdir: /app
+
+- name: Pre-compile assets (this can take a while)
+  become: true
+  become_user: tw
+  command: docker compose run --rm --entrypoint "" tw bin/rails assets:precompile
+  args:
+    chdir: /app
+  when: not skip_precompile
+
+- name: Start TaxonWorks containers (backup and migrations run automatically on startup)
+  become: true
+  become_user: tw
+  command: docker compose up -d
+  args:
+    chdir: /app
+
+- name: Wait for TaxonWorks to be up
+  become: true
+  become_user: tw
+  wait_for:
+    port: "{{ tw_port }}"
+    delay: 10
+    timeout: 600
+    state: started
+  register: result
+  until: result is succeeded
+
+- name: Wait for migrations to complete
+  become: true
+  become_user: tw
+  shell: |
+    while docker exec -i app-tw-1 ps -ef | grep db:migrate | grep -v grep; do
+      echo "Migrations still running..."
+      sleep 10
+    done
+  args:
+    chdir: /app
+
+- name: Check for pending migrations
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 bin/rails db:abort_if_pending_migrations RAILS_ENV=production
+  args:
+    chdir: /app
+  register: pending_check
+  failed_when: false
+  changed_when: false
+
+- name: Run database migrations if needed
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 bin/rails db:migrate RAILS_ENV=production
+  args:
+    chdir: /app
+  when: pending_check.rc != 0
+
+- name: Set log ownership
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 chown -R app:app /app/log
+  args:
+    chdir: /app
+
+- name: Set log permissions
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 chmod 644 /app/log/production.log
+  args:
+    chdir: /app

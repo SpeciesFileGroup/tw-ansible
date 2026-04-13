@@ -1,0 +1,12 @@
+---
+- name: Run database backup
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 /app/bin/rake tw:db:dump
+  args:
+    chdir: /app
+  register: backup_result
+
+- name: Show backup result
+  debug:
+    msg: "{{ backup_result.stdout_lines }}"

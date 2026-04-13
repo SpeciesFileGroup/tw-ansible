@@ -1,0 +1,38 @@
+---
+# Usage:
+#   ansible-playbook playbooks/backup-offsite.yml -e offsite_method=rsync -e offsite_rsync_dest=user@host:/backups
+#   ansible-playbook playbooks/backup-offsite.yml -e offsite_method=s3 -e offsite_s3_bucket=s3://bucket/path
+
+- name: Fail if rsync destination not set
+  fail:
+    msg: "Set offsite_rsync_dest (e.g., -e offsite_rsync_dest=user@host:/backups)"
+  when: offsite_method == "rsync" and offsite_rsync_dest == ""
+
+- name: Fail if S3 bucket not set
+  fail:
+    msg: "Set offsite_s3_bucket (e.g., -e offsite_s3_bucket=s3://bucket/path)"
+  when: offsite_method == "s3" and offsite_s3_bucket == ""
+
+- name: Sync backups to remote server via rsync
+  become: true
+  become_user: tw
+  command: rsync -avz --progress /backups/*.dump {{ offsite_rsync_dest }}/
+  register: rsync_result
+  when: offsite_method == "rsync"
+
+- name: Show rsync result
+  debug:
+    msg: "{{ rsync_result.stdout_lines }}"
+  when: offsite_method == "rsync"
+
+- name: Sync backups to S3
+  become: true
+  become_user: tw
+  command: aws s3 sync /backups/ {{ offsite_s3_bucket }}/ --exclude "*" --include "*.dump"
+  register: s3_result
+  when: offsite_method == "s3"
+
+- name: Show S3 sync result
+  debug:
+    msg: "{{ s3_result.stdout_lines }}"
+  when: offsite_method == "s3"

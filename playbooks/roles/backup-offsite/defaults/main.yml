@@ -1,0 +1,9 @@
+---
+# Offsite backup method: "rsync" or "s3"
+offsite_method: "rsync"
+
+# rsync destination (e.g., user@backup-server:/path/to/backups)
+offsite_rsync_dest: ""
+
+# S3 bucket (e.g., s3://my-bucket/taxonworks-backups)
+offsite_s3_bucket: ""

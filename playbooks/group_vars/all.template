@@ -42,6 +42,15 @@ tw_action_mailer_smtp_settings_address:
 tw_action_mailer_smtp_settings_port: 
 tw_action_mailer_url_host: "{{ hostname }}.{{ domain }}"
 tw_mail_domain: "{{ hostname }}.{{ domain }}"
+# Cleanup settings
+backup_retain_count: 10   # Number of most recent backups to keep
+log_retain_days: 30       # Delete rotated log files older than this many days
+
+# Offsite backup settings
+offsite_method: "rsync"   # "rsync" or "s3"
+offsite_rsync_dest: ""    # e.g., user@backup-server:/path/to/backups
+offsite_s3_bucket: ""     # e.g., s3://my-bucket/taxonworks-backups
+
 cron_jobs:
   - name: "TaxonWorks Backup"
     minute: "21"

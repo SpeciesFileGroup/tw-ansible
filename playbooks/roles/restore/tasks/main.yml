@@ -1,0 +1,81 @@
+---
+# Usage:
+#   ansible-playbook playbooks/restore.yml -e restore_file=/path/to/local/backup.dump
+#   ansible-playbook playbooks/restore.yml -e restore_from_remote=/backups/some_backup.dump
+
+- name: Fail if no restore file specified
+  fail:
+    msg: "Specify either restore_file (local path to upload) or restore_from_remote (path on server in /backups)"
+  when: restore_file is not defined and restore_from_remote is not defined
+
+- name: Set backup filename for upload
+  set_fact:
+    _restore_filename: "{{ restore_file | basename }}"
+  when: restore_file is defined
+
+- name: Set backup filename for remote file
+  set_fact:
+    _restore_filename: "{{ restore_from_remote | basename }}"
+  when: restore_from_remote is defined
+
+- name: Copy local backup file to server
+  become: true
+  become_user: root
+  copy:
+    src: "{{ restore_file }}"
+    dest: "/backups/{{ _restore_filename }}"
+    owner: tw
+    group: tw
+    mode: '0644'
+  when: restore_file is defined
+
+- name: Run a backup before restoring
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 /app/bin/rake tw:db:dump
+  args:
+    chdir: /app
+
+- name: Stop TaxonWorks container
+  become: true
+  become_user: tw
+  command: docker compose stop tw
+  args:
+    chdir: /app
+
+- name: Wait for container to stop
+  pause:
+    seconds: 10
+
+- name: Restore database from backup
+  become: true
+  become_user: tw
+  command: >
+    docker compose run --rm --entrypoint ""
+    -e PGPASSWORD={{ postgres_password }}
+    -e RAILS_ENV=production
+    -e DISABLE_DATABASE_ENVIRONMENT_CHECK=1
+    tw rake tw:db:restore backup_directory=/backups file={{ _restore_filename }} database_host=db
+  args:
+    chdir: /app
+  environment:
+    DISABLE_DATABASE_ENVIRONMENT_CHECK: "1"
+    RAILS_ENV: production
+
+- name: Start TaxonWorks container
+  become: true
+  become_user: tw
+  command: docker compose start tw
+  args:
+    chdir: /app
+
+- name: Wait for TaxonWorks to be up
+  become: true
+  become_user: tw
+  wait_for:
+    port: "{{ tw_port }}"
+    delay: 10
+    timeout: 600
+    state: started
+  register: result
+  until: result is succeeded

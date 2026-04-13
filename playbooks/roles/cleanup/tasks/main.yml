@@ -1,0 +1,46 @@
+---
+# Usage:
+#   ansible-playbook playbooks/cleanup.yml
+#   ansible-playbook playbooks/cleanup.yml -e backup_retain_count=5 -e log_retain_days=14
+
+- name: List backup files sorted by modification time (newest first)
+  become: true
+  become_user: tw
+  shell: ls -t /backups/*.dump 2>/dev/null
+  register: backup_files
+  changed_when: false
+  failed_when: false
+
+- name: Identify old backups to remove
+  set_fact:
+    old_backups: "{{ backup_files.stdout_lines[backup_retain_count | int:] }}"
+  when: backup_files.stdout_lines | length > backup_retain_count | int
+
+- name: Remove old backup files
+  become: true
+  become_user: root
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ old_backups | default([]) }}"
+
+- name: Show backup cleanup result
+  debug:
+    msg: "Removed {{ old_backups | default([]) | length }} old backup(s), kept {{ backup_retain_count }}"
+
+- name: Remove old log files
+  become: true
+  become_user: root
+  shell: find /var/lib/taxonworks/logs -name '*.log.*' -mtime +{{ log_retain_days }} -delete 2>/dev/null
+  changed_when: false
+  failed_when: false
+
+- name: Prune unused Docker images
+  become: true
+  become_user: root
+  command: docker image prune -af --filter "until=168h"
+  register: prune_result
+
+- name: Show Docker prune result
+  debug:
+    msg: "{{ prune_result.stdout_lines }}"

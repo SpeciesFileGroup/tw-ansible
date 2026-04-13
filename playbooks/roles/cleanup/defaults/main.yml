@@ -1,0 +1,6 @@
+---
+# Number of most recent backups to keep
+backup_retain_count: 10
+
+# Delete log files older than this many days
+log_retain_days: 30

@@ -1,0 +1,3 @@
+---
+# Set to true to skip asset precompilation (faster deploy if assets haven't changed)
+skip_precompile: false

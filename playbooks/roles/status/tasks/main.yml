@@ -1,0 +1,101 @@
+---
+- name: Check Docker container status
+  become: true
+  become_user: tw
+  command: docker compose ps
+  args:
+    chdir: /app
+  register: container_status
+  changed_when: false
+
+- name: Show container status
+  debug:
+    msg: "{{ container_status.stdout_lines }}"
+
+- name: Check TaxonWorks health endpoint
+  become: true
+  become_user: tw
+  uri:
+    url: "http://localhost:{{ tw_port }}/api/v1/ping"
+    return_content: yes
+    timeout: 10
+  register: health_check
+  failed_when: false
+  changed_when: false
+
+- name: Show health check result
+  debug:
+    msg: "Health check: {{ 'OK' if health_check.status == 200 else 'FAILED (status ' + (health_check.status | string) + ')' }}"
+
+- name: Check disk usage
+  command: df -h / /backups /var/lib/taxonworks
+  register: disk_usage
+  changed_when: false
+  failed_when: false
+
+- name: Show disk usage
+  debug:
+    msg: "{{ disk_usage.stdout_lines }}"
+
+- name: Find most recent backup
+  become: true
+  become_user: tw
+  shell: ls -t /backups/*.dump 2>/dev/null | head -1
+  register: latest_backup
+  changed_when: false
+  failed_when: false
+
+- name: Get age of most recent backup
+  become: true
+  become_user: tw
+  shell: |
+    if [ -n "{{ latest_backup.stdout }}" ]; then
+      stat -c '%y' "{{ latest_backup.stdout }}"
+    else
+      echo "No backups found"
+    fi
+  register: backup_age
+  changed_when: false
+  failed_when: false
+
+- name: Show latest backup info
+  debug:
+    msg: "Latest backup: {{ latest_backup.stdout | default('none') }} ({{ backup_age.stdout }})"
+
+- name: Count total backups
+  become: true
+  become_user: tw
+  shell: ls /backups/*.dump 2>/dev/null | wc -l
+  register: backup_count
+  changed_when: false
+  failed_when: false
+
+- name: Show backup count
+  debug:
+    msg: "Total backups: {{ backup_count.stdout }}"
+
+- name: Check for pending migrations
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 bin/rails db:abort_if_pending_migrations RAILS_ENV=production
+  args:
+    chdir: /app
+  register: migration_check
+  failed_when: false
+  changed_when: false
+
+- name: Show migration status
+  debug:
+    msg: "Migrations: {{ 'up to date' if migration_check.rc == 0 else 'PENDING - ' + migration_check.stderr }}"
+
+- name: Check recent log errors
+  become: true
+  become_user: tw
+  shell: tail -100 /var/lib/taxonworks/logs/production.log 2>/dev/null | grep -i 'error\|fatal' | tail -5
+  register: recent_errors
+  changed_when: false
+  failed_when: false
+
+- name: Show recent errors
+  debug:
+    msg: "{{ recent_errors.stdout_lines if recent_errors.stdout_lines | length > 0 else ['No recent errors in last 100 log lines'] }}"

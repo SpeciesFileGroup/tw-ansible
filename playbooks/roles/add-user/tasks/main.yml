@@ -1,0 +1,26 @@
+---
+# Usage:
+#   ansible-playbook playbooks/add-user.yml -e user_name="Jane Doe" -e user_email="jane@example.com" -e user_password="secret" -e user_admin=false
+
+- name: Fail if required user variables are not set
+  fail:
+    msg: "Required: -e user_name='...' -e user_email='...' -e user_password='...'"
+  when: user_name is not defined or user_email is not defined or user_password is not defined
+
+- name: Set admin default to false
+  set_fact:
+    user_admin: "{{ user_admin | default('false') }}"
+
+- name: Create TaxonWorks user
+  become: true
+  become_user: tw
+  command: >
+    docker exec -i app-tw-1 bin/rails runner -e production
+    "User.create!(name: '{{ user_name }}', email: '{{ user_email }}', password: '{{ user_password }}', password_confirmation: '{{ user_password }}', is_administrator: {{ user_admin | lower }}, self_created: true) unless User.find_by(email: '{{ user_email }}');"
+  args:
+    chdir: /app
+  register: create_result
+
+- name: Show result
+  debug:
+    msg: "User '{{ user_name }}' ({{ user_email }}) created (admin: {{ user_admin }})"

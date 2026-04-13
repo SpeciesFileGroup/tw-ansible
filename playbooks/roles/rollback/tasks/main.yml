@@ -1,0 +1,81 @@
+---
+# Usage:
+#   ansible-playbook playbooks/rollback.yml -e tw_image_tag=v0.55.0 -e tw_git_ref=v0.55.0
+#   ansible-playbook playbooks/rollback.yml -e tw_image_tag=v0.55.0 -e tw_git_ref=v0.55.0 -e restore_backup=/backups/some_backup.dump
+
+- name: Fail if rollback version not specified
+  fail:
+    msg: "Required: -e tw_image_tag=<tag> -e tw_git_ref=<git tag or commit>"
+  when: tw_image_tag is not defined or tw_git_ref is not defined
+
+- name: Run a backup before rollback
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 /app/bin/rake tw:db:dump
+  args:
+    chdir: /app
+
+- name: Stop TaxonWorks containers
+  become: true
+  become_user: tw
+  command: docker compose down
+  args:
+    chdir: /app
+
+- name: Checkout specific git ref
+  become: true
+  become_user: tw
+  command: "git checkout {{ tw_git_ref }}"
+  args:
+    chdir: /app
+
+- name: Pull specific Docker image tag
+  become: true
+  become_user: tw
+  command: "docker pull sfgrp/taxonworks:{{ tw_image_tag }}"
+
+- name: Update docker-compose.yml to use specific image tag
+  become: true
+  become_user: tw
+  lineinfile:
+    path: /app/docker-compose.yml
+    regexp: '^\s*image:\s*sfgrp/taxonworks:.*'
+    line: "    image: sfgrp/taxonworks:{{ tw_image_tag }}"
+
+- name: Restore database from backup if specified
+  become: true
+  become_user: tw
+  command: >
+    docker compose run --rm --entrypoint ""
+    -e PGPASSWORD={{ postgres_password }}
+    -e RAILS_ENV=production
+    -e DISABLE_DATABASE_ENVIRONMENT_CHECK=1
+    tw rake tw:db:restore backup_directory=/backups file={{ restore_backup | basename }} database_host=db
+  args:
+    chdir: /app
+  environment:
+    DISABLE_DATABASE_ENVIRONMENT_CHECK: "1"
+    RAILS_ENV: production
+  when: restore_backup is defined
+
+- name: Start TaxonWorks containers
+  become: true
+  become_user: tw
+  command: docker compose up -d
+  args:
+    chdir: /app
+
+- name: Wait for TaxonWorks to be up
+  become: true
+  become_user: tw
+  wait_for:
+    port: "{{ tw_port }}"
+    delay: 10
+    timeout: 600
+    state: started
+  register: result
+  until: result is succeeded
+
+- name: Show rollback result
+  debug:
+    msg: "Rolled back to image sfgrp/taxonworks:{{ tw_image_tag }} at git ref {{ tw_git_ref }}"

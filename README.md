@@ -1,11 +1,8 @@
-# Installing TaxonWorks into production with Ansible
+# Installing and managing TaxonWorks with Ansible
 
-This repository provides a template for developing playbooks that can be used to fully automate
-the configuration of a production Linux server in order to operate a production TaxonWorks instance.
-To fully automate the installation, we use [Ansible](https://docs.ansible.com/ansible/latest/getting_started/introduction.html) which is a powerful automation platform that will complete the installation 
-and system administration tasks using [YAML](https://en.wikipedia.org/wiki/YAML) configuration files defined in Ansible playbooks. You may need to customize the playbooks to fit your needs.
+This repository provides Ansible playbooks for installing and maintaining a production TaxonWorks instance on a dedicated Linux server. The playbooks install Docker and run TaxonWorks and its service dependencies in Docker containers.
 
-The Ansible playbooks will install docker and run TaxonWorks and its service dependencies in docker containers.
+To fully automate the installation, we use [Ansible](https://docs.ansible.com/ansible/latest/getting_started/introduction.html) which is a powerful automation platform that will complete the installation and system administration tasks using [YAML](https://en.wikipedia.org/wiki/YAML) configuration files defined in Ansible playbooks. You may need to customize the playbooks to fit your needs.
 
 ## Requirements
 
@@ -22,14 +19,36 @@ ensure you understand what they do.
 
 ## Playbooks
 
-Currently two playbooks are provided:
+### Setup
 
-1) bootstrap.yml
-2) tw.yml
+| Playbook | Description |
+|---|---|
+| `bootstrap.yml` | Configures the base Linux system (users, SSH keys, hostname, firewall) |
+| `install.yml` | Full initial installation of TaxonWorks (Docker, database, configs, containers) |
 
-The bootstrap playbook handles configuring the base Linux system for installing TaxonWorks. The TW playbook
-depends upon the boostrap playbook and installs TaxonWorks. The playbooks are designed to be idempotent, 
-meaning that you can run them as many times as you want and should always get the same result.
+### Operations
+
+| Playbook | Description |
+|---|---|
+| `upgrade.yml` | Upgrade TaxonWorks to the latest version |
+| `restart.yml` | Restart containers without upgrading |
+| `rollback.yml` | Roll back to a specific version |
+| `status.yml` | Health check (containers, disk, backups, migrations, errors) |
+
+### Backup & Recovery
+
+| Playbook | Description |
+|---|---|
+| `backup.yml` | On-demand database backup |
+| `restore.yml` | Restore database from a backup file |
+| `backup-offsite.yml` | Copy backups to a remote server or S3 |
+| `cleanup.yml` | Prune old backups, logs, and Docker images |
+
+### User Management
+
+| Playbook | Description |
+|---|---|
+| `add-user.yml` | Create a TaxonWorks user account |
 
 ## Installing
 
@@ -53,7 +72,7 @@ git clone https://github.com/SpeciesFileGroup/tw-ansible.git
 cd tw-ansible
 ```
 
-### 3) Edit the hosts file
+### 4) Edit the hosts file
 
 Copy the hosts.template file to hosts:
 
@@ -71,9 +90,9 @@ tw ansible_host=X.X.X.X
 127.0.0.1 ansible_connection=local
 
 ```
-`tw` will be the name of the name for the server.
+`tw` will be the name for the server.
 
-### 4) Edit the global variables file
+### 5) Edit the global variables file
 
 Copy the global variables file:
 
@@ -83,10 +102,94 @@ cp playbooks/group_vars/all.template playbooks/group_vars/all
 
 Edit the `playbooks/group_vars/all` file to define the global variables for your server.
 
-### 5) Install TaxonWorks
+### 6) Install TaxonWorks
 
 ```sh
-ansible-playbook -i ./hosts playbooks/tw.yml --user tw --ask-pass --ask-become-pass
+ansible-playbook -i ./hosts playbooks/install.yml --user tw --ask-pass --ask-become-pass
+```
+
+## Operations
+
+All operational playbooks follow the same pattern:
+
+```sh
+ansible-playbook -i ./hosts playbooks/<playbook>.yml --user tw --ask-pass --ask-become-pass
+```
+
+### Upgrading
+
+```sh
+ansible-playbook -i ./hosts playbooks/upgrade.yml --user tw --ask-pass --ask-become-pass
+```
+
+Skip asset precompilation for a faster deploy:
+
+```sh
+ansible-playbook -i ./hosts playbooks/upgrade.yml --user tw --ask-pass --ask-become-pass -e skip_precompile=true
+```
+
+### Restarting
+
+```sh
+# Restart all containers
+ansible-playbook -i ./hosts playbooks/restart.yml --user tw --ask-pass --ask-become-pass
+
+# Restart only the TaxonWorks container
+ansible-playbook -i ./hosts playbooks/restart.yml --user tw --ask-pass --ask-become-pass -e service=tw
+```
+
+### Rolling back
+
+```sh
+ansible-playbook -i ./hosts playbooks/rollback.yml --user tw --ask-pass --ask-become-pass \
+  -e tw_image_tag=v0.55.0 -e tw_git_ref=v0.55.0
+
+# Optionally restore a database backup as part of the rollback
+ansible-playbook -i ./hosts playbooks/rollback.yml --user tw --ask-pass --ask-become-pass \
+  -e tw_image_tag=v0.55.0 -e tw_git_ref=v0.55.0 -e restore_backup=/backups/some_backup.dump
+```
+
+### Checking status
+
+```sh
+ansible-playbook -i ./hosts playbooks/status.yml --user tw --ask-pass --ask-become-pass
+```
+
+### Backup and restore
+
+```sh
+# On-demand backup
+ansible-playbook -i ./hosts playbooks/backup.yml --user tw --ask-pass --ask-become-pass
+
+# Restore from a local file (uploads to server)
+ansible-playbook -i ./hosts playbooks/restore.yml --user tw --ask-pass --ask-become-pass \
+  -e restore_file=/path/to/local/backup.dump
+
+# Restore from a file already on the server
+ansible-playbook -i ./hosts playbooks/restore.yml --user tw --ask-pass --ask-become-pass \
+  -e restore_from_remote=/backups/some_backup.dump
+
+# Copy backups offsite via rsync
+ansible-playbook -i ./hosts playbooks/backup-offsite.yml --user tw --ask-pass --ask-become-pass \
+  -e offsite_rsync_dest=user@backup-server:/backups
+
+# Copy backups offsite to S3
+ansible-playbook -i ./hosts playbooks/backup-offsite.yml --user tw --ask-pass --ask-become-pass \
+  -e offsite_method=s3 -e offsite_s3_bucket=s3://my-bucket/taxonworks-backups
+
+# Clean up old backups, logs, and Docker images
+ansible-playbook -i ./hosts playbooks/cleanup.yml --user tw --ask-pass --ask-become-pass
+```
+
+### Adding users
+
+```sh
+ansible-playbook -i ./hosts playbooks/add-user.yml --user tw --ask-pass --ask-become-pass \
+  -e user_name="Jane Doe" -e user_email="jane@example.com" -e user_password="secret"
+
+# Create an admin user
+ansible-playbook -i ./hosts playbooks/add-user.yml --user tw --ask-pass --ask-become-pass \
+  -e user_name="Jane Doe" -e user_email="jane@example.com" -e user_password="secret" -e user_admin=true
 ```
 
 ## Contributing
