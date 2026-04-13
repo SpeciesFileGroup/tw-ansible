@@ -17,12 +17,17 @@ services:
       - POSTGRES_POOL_SIZE={{ postgres_pool_size }}
       - NGINX_SECRET_KEY={{ nginx_secret_key }}
       - SECRET_KEY_BASE={{ secret_key_base }}
-      - TW_EXCEPTION_NOTIFICATION_EMAIL_PREFIX="[TW-Error] "
+      - TW_EXCEPTION_NOTIFICATION_EMAIL_PREFIX={{ tw_exception_notification_email_prefix }}
       - TW_EXCEPTION_NOTIFICATION_SENDER_ADDRESS="{{ tw_exception_notification_sender_address }}"
-      - TW_EXCEPTION_RECIPIENTS=gdower@illinois.edu
-      - TW_ACTION_MAILER_SMTP_SETTINGS_ADDRESS={{ tw_action_mailer_smtp_settings_address}}
-      - TW_ACTION_MAILER_SMTP_SETTINGS_PORT={{ tw_action_mailer_smtp_settings_port }}
-      - TW_ACTION_MAILER_SMTP_SETTINGS_DOMAIN={{ tw_action_mailer_smtp_settings_domain }}
+      - TW_EXCEPTION_RECIPIENTS={{ tw_admin_emails | join(',') }}
+{% if _smtp_address | default('') != '' %}
+      - TW_ACTION_MAILER_SMTP_SETTINGS_ADDRESS={{ _smtp_address }}
+      - TW_ACTION_MAILER_SMTP_SETTINGS_PORT={{ _smtp_port }}
+      - TW_ACTION_MAILER_SMTP_SETTINGS_DOMAIN={{ hostname }}.{{ domain }}
+      - TW_ACTION_MAILER_SMTP_SETTINGS_USER_NAME={{ _smtp_user }}
+      - TW_ACTION_MAILER_SMTP_SETTINGS_PASSWORD={{ _smtp_password }}
+      - TW_ACTION_MAILER_SMTP_SETTINGS_AUTHENTICATION_TYPE={{ _smtp_auth }}
+{% endif %}
       - TW_ACTION_MAILER_URL_HOST={{ tw_action_mailer_url_host }}
       - TW_MAIL_DOMAIN={{ tw_mail_domain }}
       - TW_PATHS_STAGING=/staging
@@ -45,6 +50,10 @@ services:
      - /backups:/backups:rw
      - /staging:/staging:rw
      - /app/config:/app/config:rw
+{% if enable_ssl | default(false) %}
+     - /etc/letsencrypt:/etc/letsencrypt:ro
+     - /var/lib/letsencrypt:/var/lib/letsencrypt:rw
+{% endif %}
     stdin_open: true
     tty: true
   db:

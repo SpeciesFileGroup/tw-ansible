@@ -34,14 +34,77 @@ database_init_mode: "restore"  # Options: "empty", "restore", "initialize"
 
 nginx_secret_key: 
 secret_key_base: 
-tw_exception_notification_email_prefix: "[TW-Error] "
-tw_exception_recipients: 
-tw_exception_notification_sender_address: "Notifier <notifier@{{ hostname }}.{{ domain }}>"
-tw_action_mailer_smtp_settings_domain: "{{ hostname }}.{{ domain }}"
-tw_action_mailer_smtp_settings_address: 
-tw_action_mailer_smtp_settings_port: 
+# Email delivery settings
+#
+# TaxonWorks sends email for password resets, user invitations, and exception
+# notifications to administrators. You need an email delivery service for these
+# to work. We recommend using an API-based service — do not run your own mail
+# server (spam reputation, security, and deliverability are hard to get right).
+#
+# Recommended: Postmark (https://postmarkapp.com)
+#   - 100 emails/month free — more than enough for most TaxonWorks instances
+#   - Simple setup: create a server, copy the API token below
+#
+# Supported providers:
+#   postmark  — 100 emails/month free, just needs an API token
+#   brevo     — 300 emails/day free, needs account email + SMTP key
+#   sendgrid  — needs API key (free tier availability varies)
+#   mailgun   — needs SMTP password + sending domain
+#   ses       — Amazon SES, needs SMTP credentials + AWS region
+#
+mail_provider: ""                 # One of: postmark, brevo, sendgrid, mailgun, ses (leave empty to skip)
+mail_credential: ""               # See provider-specific instructions below
+mail_credential_secret: ""        # Only needed for: ses (SMTP password), brevo (SMTP key)
+mail_domain: ""                   # Only needed for: mailgun (your sending domain, e.g., mg.yourdomain.com)
+mail_region: ""                   # Only needed for: ses (AWS region, e.g., us-east-1)
+#
+# Provider setup instructions:
+#
+#   Postmark:
+#     1. Sign up at https://postmarkapp.com
+#     2. Create a server, go to Credentials tab
+#     3. Set mail_credential to your Server API Token
+#
+#   Brevo:
+#     1. Sign up at https://brevo.com
+#     2. Go to Settings > SMTP & API > SMTP
+#     3. Set mail_credential to your login email
+#     4. Set mail_credential_secret to your SMTP key
+#
+#   SendGrid:
+#     1. Sign up at https://sendgrid.com
+#     2. Create an API key with Mail Send permissions
+#     3. Set mail_credential to your API key
+#
+#   Mailgun:
+#     1. Sign up at https://mailgun.com
+#     2. Add and verify your sending domain
+#     3. Set mail_credential to your SMTP password (under Domain settings > SMTP credentials)
+#     4. Set mail_domain to your sending domain (e.g., mg.yourdomain.com)
+#
+#   Amazon SES:
+#     1. In AWS Console, go to SES > SMTP Settings > Create SMTP credentials
+#     2. Set mail_credential to the SMTP username
+#     3. Set mail_credential_secret to the SMTP password
+#     4. Set mail_region to your SES region (e.g., us-east-1)
+#
+
 tw_action_mailer_url_host: "{{ hostname }}.{{ domain }}"
 tw_mail_domain: "{{ hostname }}.{{ domain }}"
+
+# Administrator email addresses
+# These receive exception notifications when errors occur in TaxonWorks.
+# Add or remove addresses and re-run the mail.yml playbook to update.
+tw_admin_emails:
+  - admin@example.com
+
+tw_exception_notification_email_prefix: "[TW-Error] "
+tw_exception_notification_sender_address: "Notifier <notifier@{{ hostname }}.{{ domain }}>"
+# SSL settings (run ssl.yml playbook after install to enable)
+enable_ssl: false              # Set to true after running ssl.yml so upgrades preserve SSL config
+certbot_email: ""              # Email for Let's Encrypt registration
+certbot_domain: "{{ hostname }}.{{ domain }}"  # Domain for the certificate
+
 # Cleanup settings
 backup_retain_count: 10   # Number of most recent backups to keep
 log_retain_days: 30       # Delete rotated log files older than this many days

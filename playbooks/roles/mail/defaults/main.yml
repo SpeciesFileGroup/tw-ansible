@@ -1,0 +1,22 @@
+---
+# Provider-to-SMTP mapping (do not edit — configure mail_provider in group_vars instead)
+_mail_providers:
+  postmark:
+    address: "smtp.postmarkapp.com"
+    port: 587
+    auth: "plain"
+  brevo:
+    address: "smtp-relay.brevo.com"
+    port: 587
+    auth: "plain"
+  sendgrid:
+    address: "smtp.sendgrid.net"
+    port: 587
+    auth: "plain"
+  mailgun:
+    address: "smtp.mailgun.org"
+    port: 587
+    auth: "plain"
+  ses:
+    port: 587
+    auth: "login"

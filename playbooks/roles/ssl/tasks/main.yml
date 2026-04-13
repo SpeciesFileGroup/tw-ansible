@@ -1,0 +1,111 @@
+---
+# Usage:
+#   ansible-playbook playbooks/ssl.yml -e certbot_email=admin@example.com
+#
+# Prerequisites:
+#   - DNS for the domain must already point to this server's IP
+#   - install.yml must have been run first
+
+- name: Fail if certbot_email is not set
+  fail:
+    msg: "Required: -e certbot_email=you@example.com"
+  when: certbot_email == ""
+
+- name: Install certbot
+  apt:
+    update_cache: yes
+    name: certbot
+    state: present
+
+- name: Check if certificate already exists
+  stat:
+    path: "/etc/letsencrypt/live/{{ certbot_domain }}/fullchain.pem"
+  register: cert_exists
+
+- name: Stop TaxonWorks containers to free port 80 for certbot
+  become: true
+  become_user: tw
+  command: docker compose down
+  args:
+    chdir: /app
+  when: not cert_exists.stat.exists
+
+- name: Obtain Let's Encrypt certificate
+  command: >
+    certbot certonly --standalone
+    --non-interactive
+    --agree-tos
+    --email {{ certbot_email }}
+    -d {{ certbot_domain }}
+  when: not cert_exists.stat.exists
+
+- name: Install SSL nginx config into TaxonWorks config directory
+  template:
+    src: webapp.conf.erb
+    dest: /app/config/docker/nginx/webapp.conf.erb
+    owner: tw
+    group: tw
+    mode: '0644'
+
+- name: Add Let's Encrypt volume mount to docker-compose.yml
+  become: true
+  become_user: tw
+  lineinfile:
+    path: /app/docker-compose.yml
+    insertafter: '^\s*- /staging:/staging:rw'
+    line: '     - /etc/letsencrypt:/etc/letsencrypt:ro'
+    state: present
+
+- name: Add ACME webroot volume mount to docker-compose.yml
+  become: true
+  become_user: tw
+  lineinfile:
+    path: /app/docker-compose.yml
+    insertafter: '^\s*- /etc/letsencrypt:/etc/letsencrypt:ro'
+    line: '     - /var/lib/letsencrypt:/var/lib/letsencrypt:rw'
+    state: present
+
+- name: Start TaxonWorks containers with SSL
+  become: true
+  become_user: tw
+  command: docker compose up -d
+  args:
+    chdir: /app
+
+- name: Wait for TaxonWorks to be up
+  become: true
+  become_user: tw
+  wait_for:
+    port: "{{ tw_port }}"
+    delay: 10
+    timeout: 600
+    state: started
+  register: result
+  until: result is succeeded
+
+- name: Install certbot renewal hook
+  template:
+    src: certbot-renew-hook.sh
+    dest: /etc/letsencrypt/renewal-hooks/deploy/taxonworks-reload.sh
+    mode: '0755'
+
+- name: Set up certbot renewal with webroot (avoids downtime on renewal)
+  command: >
+    certbot certonly --webroot
+    --non-interactive
+    --agree-tos
+    --email {{ certbot_email }}
+    --cert-name {{ certbot_domain }}
+    -d {{ certbot_domain }}
+    -w /var/lib/letsencrypt
+  when: cert_exists.stat.exists
+
+- name: Ensure certbot auto-renewal timer is enabled
+  systemd:
+    name: certbot.timer
+    enabled: yes
+    state: started
+
+- name: Show result
+  debug:
+    msg: "SSL configured for {{ certbot_domain }}. Certbot auto-renewal is enabled. Certificate at /etc/letsencrypt/live/{{ certbot_domain }}/"

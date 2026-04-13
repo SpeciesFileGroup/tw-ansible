@@ -1,0 +1,50 @@
+---
+# Usage:
+#   ansible-playbook playbooks/migrate.yml                           # run pending migrations
+#   ansible-playbook playbooks/migrate.yml -e version=20250521031736 # migrate to specific version
+#   ansible-playbook playbooks/migrate.yml -e direction=down -e version=20250521031736  # rollback a migration
+
+- name: Run a backup before migrating
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 /app/bin/rake tw:db:dump
+  args:
+    chdir: /app
+
+- name: Check for pending migrations
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 bin/rails db:abort_if_pending_migrations RAILS_ENV=production
+  args:
+    chdir: /app
+  register: pending_check
+  failed_when: false
+  changed_when: false
+  when: version is not defined and direction is not defined
+
+- name: Show migration status
+  debug:
+    msg: "{{ 'No pending migrations' if pending_check.rc == 0 else 'Pending migrations found, running...' }}"
+  when: version is not defined and direction is not defined
+
+- name: Run all pending migrations
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 bin/rails db:migrate RAILS_ENV=production
+  args:
+    chdir: /app
+  register: migrate_result
+  when: version is not defined and direction is not defined and pending_check.rc != 0
+
+- name: Run migration to specific version
+  become: true
+  become_user: tw
+  command: "docker exec -i app-tw-1 bin/rails db:migrate:{{ direction | default('up') }} VERSION={{ version }} RAILS_ENV=production"
+  args:
+    chdir: /app
+  register: migrate_result
+  when: version is defined
+
+- name: Show migration result
+  debug:
+    msg: "{{ migrate_result.stdout_lines | default(['No migrations were run']) }}"

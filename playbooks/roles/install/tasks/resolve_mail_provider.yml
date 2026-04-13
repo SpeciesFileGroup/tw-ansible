@@ -1,0 +1,53 @@
+---
+# Shared task: maps mail_provider to _smtp_* variables for docker-compose.yml template.
+# Included by install, upgrade, and mail roles.
+
+- name: Load mail provider defaults
+  include_vars:
+    file: ../../roles/mail/defaults/main.yml
+  when: mail_provider | default('') != ''
+
+- name: Set SMTP address from provider
+  set_fact:
+    _smtp_address: "{{ _mail_providers[mail_provider].address | default('email-smtp.' + (mail_region | default('us-east-1')) + '.amazonaws.com') }}"
+  when: mail_provider | default('') != ''
+
+- name: Set SMTP port from provider
+  set_fact:
+    _smtp_port: "{{ _mail_providers[mail_provider].port }}"
+  when: mail_provider | default('') != ''
+
+- name: Set SMTP auth type from provider
+  set_fact:
+    _smtp_auth: "{{ _mail_providers[mail_provider].auth }}"
+  when: mail_provider | default('') != ''
+
+- name: Set SMTP username for Postmark
+  set_fact:
+    _smtp_user: "{{ mail_credential }}"
+    _smtp_password: "{{ mail_credential }}"
+  when: mail_provider | default('') == 'postmark'
+
+- name: Set SMTP username for SendGrid
+  set_fact:
+    _smtp_user: "apikey"
+    _smtp_password: "{{ mail_credential }}"
+  when: mail_provider | default('') == 'sendgrid'
+
+- name: Set SMTP username for Mailgun
+  set_fact:
+    _smtp_user: "postmaster@{{ mail_domain }}"
+    _smtp_password: "{{ mail_credential }}"
+  when: mail_provider | default('') == 'mailgun'
+
+- name: Set SMTP username for Amazon SES
+  set_fact:
+    _smtp_user: "{{ mail_credential }}"
+    _smtp_password: "{{ mail_credential_secret }}"
+  when: mail_provider | default('') == 'ses'
+
+- name: Set SMTP username for Brevo
+  set_fact:
+    _smtp_user: "{{ mail_credential }}"
+    _smtp_password: "{{ mail_credential_secret }}"
+  when: mail_provider | default('') == 'brevo'

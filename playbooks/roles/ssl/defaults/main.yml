@@ -1,0 +1,6 @@
+---
+# Email for Let's Encrypt registration and renewal notices
+certbot_email: ""
+
+# Domain for the certificate (defaults to hostname.domain from group_vars)
+certbot_domain: "{{ hostname }}.{{ domain }}"

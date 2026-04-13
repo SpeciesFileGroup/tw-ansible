@@ -1,0 +1,93 @@
+---
+# Usage:
+#   ansible-playbook playbooks/mail.yml
+#
+# Configure mail_provider, mail_credential, and tw_admin_emails in group_vars/all.
+# Re-run this playbook any time you change the admin email list or mail provider.
+
+- name: Fail if mail_provider is not set
+  fail:
+    msg: "Set mail_provider in group_vars/all. Supported: postmark, brevo, sendgrid, mailgun, ses"
+  when: mail_provider | default('') == ''
+
+- name: Fail if mail_credential is not set
+  fail:
+    msg: "Set mail_credential in group_vars/all (see provider setup instructions)"
+  when: mail_credential | default('') == ''
+
+- name: Fail if Mailgun domain is not set
+  fail:
+    msg: "Mailgun requires mail_domain (your sending domain, e.g., mg.yourdomain.com)"
+  when: mail_provider == 'mailgun' and mail_domain | default('') == ''
+
+- name: Fail if Amazon SES region is not set
+  fail:
+    msg: "Amazon SES requires mail_region (e.g., us-east-1)"
+  when: mail_provider == 'ses' and mail_region | default('') == ''
+
+- name: Fail if Amazon SES secret is not set
+  fail:
+    msg: "Amazon SES requires mail_credential_secret (SMTP password)"
+  when: mail_provider == 'ses' and mail_credential_secret | default('') == ''
+
+- name: Fail if Brevo secret is not set
+  fail:
+    msg: "Brevo requires mail_credential_secret (SMTP key)"
+  when: mail_provider == 'brevo' and mail_credential_secret | default('') == ''
+
+- name: Fail if no admin emails are configured
+  fail:
+    msg: "Set tw_admin_emails in group_vars/all (list of email addresses for exception notifications)"
+  when: tw_admin_emails is not defined or tw_admin_emails | length == 0
+
+# Resolve provider to SMTP variables (shared with install/upgrade roles)
+- name: Resolve mail provider to SMTP settings
+  include_tasks: ../../roles/install/tasks/resolve_mail_provider.yml
+
+# Re-template configs and restart
+- name: Copy docker-compose.yml with updated mail settings
+  become: true
+  become_user: tw
+  template:
+    src: ../../roles/install/templates/docker-compose.yml
+    dest: /app/docker-compose.yml
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
+- name: Copy application_settings.yml with updated settings
+  become: true
+  become_user: tw
+  template:
+    src: ../../roles/install/templates/application_settings.yml
+    dest: /app/config/application_settings.yml
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
+- name: Restart TaxonWorks container to apply mail settings
+  become: true
+  become_user: tw
+  command: docker compose restart tw
+  args:
+    chdir: /app
+
+- name: Wait for TaxonWorks to be up
+  become: true
+  become_user: tw
+  wait_for:
+    port: "{{ tw_port }}"
+    delay: 10
+    timeout: 600
+    state: started
+  register: result
+  until: result is succeeded
+
+- name: Show configuration summary
+  debug:
+    msg:
+      - "Mail provider: {{ mail_provider }}"
+      - "SMTP host: {{ _smtp_address }}:{{ _smtp_port }}"
+      - "Admin emails: {{ tw_admin_emails | join(', ') }}"

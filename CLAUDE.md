@@ -20,6 +20,11 @@ playbooks/
   backup-offsite.yml        # Playbook: copy backups to remote destination
   cleanup.yml               # Playbook: prune old backups, logs, Docker images
   add-user.yml              # Playbook: create a TaxonWorks user
+  ssl.yml                   # Playbook: set up Let's Encrypt SSL/TLS
+  mail.yml                  # Playbook: configure email delivery and admin addresses
+  maintenance.yml           # Playbook: toggle maintenance mode on/off
+  migrate.yml               # Playbook: run database migrations independently
+  logs.yml                  # Playbook: view or search production logs
   group_vars/
     all.template            # Global variables template — copy to `all` and fill in values
   roles/
@@ -34,6 +39,11 @@ playbooks/
     backup-offsite/         # Role: rsync or S3 sync of /backups
     cleanup/                # Role: prune old backups and Docker images
     add-user/               # Role: create user via rails runner
+    ssl/                    # Role: certbot, nginx SSL config, renewal hook
+    mail/                   # Role: configure email provider, admin emails, restart
+    maintenance/            # Role: toggle maintenance page, stop/start tw container
+    migrate/                # Role: run db:migrate with backup
+    logs/                   # Role: tail or grep production logs
 ```
 
 ## Key conventions
@@ -54,6 +64,10 @@ playbooks/
 - On container startup, the TaxonWorks init script (`config/docker/nginx/init.sh` in the TaxonWorks repo) automatically backs up the database and runs migrations. If a migration fails it auto-restores from the backup.
 - A cron job runs nightly database backups via `tw:db:dump`.
 - Backups are stored as `.dump` files (pg_dump custom format) in `/backups` on the host.
+- SSL is handled by mounting Let's Encrypt certs from the host (`/etc/letsencrypt`) into the container. The ssl role replaces the container's `webapp.conf.erb` with one that redirects HTTP to HTTPS. After running `ssl.yml`, set `enable_ssl: true` in group_vars so upgrades preserve the volume mounts.
+- The container's nginx config is at `/app/config/docker/nginx/webapp.conf.erb` — the init script renders it with ERB on each container start.
+- Email delivery uses API-based services (Postmark recommended, 100/month free). The mail role maps `mail_provider` to SMTP relay settings — self-hosted SMTP is not supported. Provider mapping logic is in `roles/install/tasks/resolve_mail_provider.yml` (shared by install, upgrade, and mail roles).
+- `tw_admin_emails` is a list in group_vars. Re-running `mail.yml` re-templates docker-compose.yml with updated addresses and restarts the container.
 
 ## Running playbooks
 

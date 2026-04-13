@@ -20,6 +20,9 @@
   args:
     chdir: /app
 
+- name: Resolve mail provider to SMTP settings
+  include_tasks: ../../roles/install/tasks/resolve_mail_provider.yml
+
 - name: Copy docker-compose.yml to TaxonWorks directory
   become: true
   become_user: tw

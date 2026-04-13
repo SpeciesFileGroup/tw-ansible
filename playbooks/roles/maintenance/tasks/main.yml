@@ -1,0 +1,84 @@
+---
+# Usage:
+#   ansible-playbook playbooks/maintenance.yml -e state=on     # enable maintenance mode
+#   ansible-playbook playbooks/maintenance.yml -e state=off    # disable maintenance mode
+
+- name: Fail if state is not specified
+  fail:
+    msg: "Required: -e state=on or -e state=off"
+  when: state is not defined or state not in ['on', 'off']
+
+- name: Copy maintenance page to server
+  become: true
+  become_user: tw
+  template:
+    src: maintenance.html
+    dest: /var/lib/taxonworks/public/maintenance.html
+    owner: tw
+    group: tw
+    mode: '0644'
+  when: state == "on"
+
+- name: Enable maintenance mode (drop maintenance flag file)
+  become: true
+  become_user: tw
+  file:
+    path: /var/lib/taxonworks/public/maintenance_mode
+    state: touch
+    owner: tw
+    group: tw
+  when: state == "on"
+
+- name: Stop TaxonWorks container (keeps database running)
+  become: true
+  become_user: tw
+  command: docker compose stop tw
+  args:
+    chdir: /app
+  when: state == "on"
+
+- name: Show maintenance on message
+  debug:
+    msg: "Maintenance mode ON. TaxonWorks container stopped. The maintenance page is at /var/lib/taxonworks/public/maintenance.html."
+  when: state == "on"
+
+- name: Disable maintenance mode (remove flag file)
+  become: true
+  become_user: tw
+  file:
+    path: /var/lib/taxonworks/public/maintenance_mode
+    state: absent
+  when: state == "off"
+
+- name: Remove maintenance page
+  become: true
+  become_user: tw
+  file:
+    path: /var/lib/taxonworks/public/maintenance.html
+    state: absent
+  when: state == "off"
+
+- name: Start TaxonWorks container
+  become: true
+  become_user: tw
+  command: docker compose start tw
+  args:
+    chdir: /app
+  when: state == "off"
+
+- name: Wait for TaxonWorks to be up
+  become: true
+  become_user: tw
+  wait_for:
+    port: "{{ tw_port }}"
+    delay: 10
+    timeout: 600
+    state: started
+  register: result
+  until: result is succeeded
+  when: state == "off"
+
+- name: Show maintenance off message
+  debug:
+    msg: "Maintenance mode OFF. TaxonWorks is back up."
+  when: state == "off"

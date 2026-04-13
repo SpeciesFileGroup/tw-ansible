@@ -34,6 +34,11 @@ ensure you understand what they do.
 | `restart.yml` | Restart containers without upgrading |
 | `rollback.yml` | Roll back to a specific version |
 | `status.yml` | Health check (containers, disk, backups, migrations, errors) |
+| `ssl.yml` | Set up Let's Encrypt SSL/TLS certificates |
+| `maintenance.yml` | Toggle maintenance mode on/off |
+| `migrate.yml` | Run database migrations independently |
+| `logs.yml` | View or search production log files |
+| `mail.yml` | Configure email delivery and admin notification addresses |
 
 ### Backup & Recovery
 
@@ -128,6 +133,17 @@ Skip asset precompilation for a faster deploy:
 ansible-playbook -i ./hosts playbooks/upgrade.yml --user tw --ask-pass --ask-become-pass -e skip_precompile=true
 ```
 
+### SSL/TLS with Let's Encrypt
+
+Requires DNS for the domain to already point to the server's IP address.
+
+```sh
+ansible-playbook -i ./hosts playbooks/ssl.yml --user tw --ask-pass --ask-become-pass \
+  -e certbot_email=admin@example.com
+```
+
+After running `ssl.yml`, set `enable_ssl: true` in your `playbooks/group_vars/all` file so that future runs of `upgrade.yml` preserve the SSL volume mounts in `docker-compose.yml`. Certbot auto-renewal is enabled via systemd timer and will reload nginx in the container after each renewal.
+
 ### Restarting
 
 ```sh
@@ -180,6 +196,75 @@ ansible-playbook -i ./hosts playbooks/backup-offsite.yml --user tw --ask-pass --
 # Clean up old backups, logs, and Docker images
 ansible-playbook -i ./hosts playbooks/cleanup.yml --user tw --ask-pass --ask-become-pass
 ```
+
+### Maintenance mode
+
+```sh
+# Enable maintenance mode (stops TaxonWorks container, keeps database running)
+ansible-playbook -i ./hosts playbooks/maintenance.yml --user tw --ask-pass --ask-become-pass -e state=on
+
+# Disable maintenance mode (starts TaxonWorks container back up)
+ansible-playbook -i ./hosts playbooks/maintenance.yml --user tw --ask-pass --ask-become-pass -e state=off
+```
+
+### Database migrations
+
+```sh
+# Run all pending migrations (backs up database first)
+ansible-playbook -i ./hosts playbooks/migrate.yml --user tw --ask-pass --ask-become-pass
+
+# Migrate to a specific version
+ansible-playbook -i ./hosts playbooks/migrate.yml --user tw --ask-pass --ask-become-pass -e version=20250521031736
+
+# Roll back a specific migration
+ansible-playbook -i ./hosts playbooks/migrate.yml --user tw --ask-pass --ask-become-pass \
+  -e direction=down -e version=20250521031736
+```
+
+### Viewing logs
+
+```sh
+# Last 100 lines of production.log
+ansible-playbook -i ./hosts playbooks/logs.yml --user tw --ask-pass --ask-become-pass
+
+# Last 500 lines
+ansible-playbook -i ./hosts playbooks/logs.yml --user tw --ask-pass --ask-become-pass -e lines=500
+
+# Search for errors
+ansible-playbook -i ./hosts playbooks/logs.yml --user tw --ask-pass --ask-become-pass -e grep="SomeError"
+
+# View backup log
+ansible-playbook -i ./hosts playbooks/logs.yml --user tw --ask-pass --ask-become-pass -e log=backup
+```
+
+### Email delivery
+
+TaxonWorks sends email for password resets, user invitations, and exception notifications to administrators. An email delivery service is required for these features to work.
+
+**We do not recommend or support running your own SMTP mail server.** Self-hosted email is difficult to maintain, prone to spam reputation issues, and a security liability. Instead, use one of the supported API-based email services below.
+
+We recommend [Postmark](https://postmarkapp.com) as a default — it includes 100 free emails per month, which is more than sufficient for most TaxonWorks instances, and only requires a single API token to set up.
+
+Supported providers: **Postmark**, **Brevo**, **SendGrid**, **Mailgun**, **Amazon SES**.
+
+Configure your provider in `playbooks/group_vars/all`:
+
+```yaml
+mail_provider: "postmark"
+mail_credential: "your-postmark-server-api-token"
+
+tw_admin_emails:
+  - admin1@example.com
+  - admin2@example.com
+```
+
+Then run:
+
+```sh
+ansible-playbook -i ./hosts playbooks/mail.yml --user tw --ask-pass --ask-become-pass
+```
+
+To update the admin email list, edit `tw_admin_emails` in `group_vars/all` and re-run `mail.yml`. See `group_vars/all.template` for provider-specific setup instructions.
 
 ### Adding users
 
