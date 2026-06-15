@@ -2,34 +2,17 @@
 # Usage:
 #   ansible-playbook playbooks/maintenance.yml -e state=on     # enable maintenance mode
 #   ansible-playbook playbooks/maintenance.yml -e state=off    # disable maintenance mode
+#
+# Maintenance mode stops the tw container and runs a small nginx sidecar
+# ("maintenance" service in docker-compose.yml) that serves maintenance.html
+# on port 80 with HTTP 503. Turning it off stops the sidecar and restarts tw.
 
 - name: Fail if state is not specified
   fail:
     msg: "Required: -e state=on or -e state=off"
   when: state is not defined or state not in ['on', 'off']
 
-- name: Copy maintenance page to server
-  become: true
-  become_user: tw
-  template:
-    src: maintenance.html
-    dest: /var/lib/taxonworks/public/maintenance.html
-    owner: tw
-    group: tw
-    mode: '0644'
-  when: state == "on"
-
-- name: Enable maintenance mode (drop maintenance flag file)
-  become: true
-  become_user: tw
-  file:
-    path: /var/lib/taxonworks/public/maintenance_mode
-    state: touch
-    owner: tw
-    group: tw
-  when: state == "on"
-
-- name: Stop TaxonWorks container (keeps database running)
+- name: Stop TaxonWorks container
   become: true
   become_user: tw
   command: docker compose stop tw
@@ -37,25 +20,25 @@
     chdir: /app
   when: state == "on"
 
-- name: Show maintenance on message
-  debug:
-    msg: "Maintenance mode ON. TaxonWorks container stopped. The maintenance page is at /var/lib/taxonworks/public/maintenance.html."
+- name: Start maintenance sidecar
+  become: true
+  become_user: tw
+  command: docker compose --profile maintenance up -d maintenance
+  args:
+    chdir: /app
   when: state == "on"
 
-- name: Disable maintenance mode (remove flag file)
-  become: true
-  become_user: tw
-  file:
-    path: /var/lib/taxonworks/public/maintenance_mode
-    state: absent
-  when: state == "off"
+- name: Show maintenance on message
+  debug:
+    msg: "Maintenance mode ON. Sidecar nginx is serving /var/lib/taxonworks/public/maintenance.html on port {{ tw_port }}."
+  when: state == "on"
 
-- name: Remove maintenance page
+- name: Stop maintenance sidecar
   become: true
   become_user: tw
-  file:
-    path: /var/lib/taxonworks/public/maintenance.html
-    state: absent
+  command: docker compose stop maintenance
+  args:
+    chdir: /app
   when: state == "off"
 
 - name: Start TaxonWorks container
@@ -66,16 +49,15 @@
     chdir: /app
   when: state == "off"
 
-- name: Wait for TaxonWorks to be up
+- name: Wait for TaxonWorks to be healthy
   become: true
   become_user: tw
-  wait_for:
-    port: "{{ tw_port }}"
-    delay: 10
-    timeout: 600
-    state: started
-  register: result
-  until: result is succeeded
+  command: docker inspect --format '{{ "{{" }} .State.Health.Status {{ "}}" }}' app-tw-1
+  register: tw_health
+  changed_when: false
+  retries: 120
+  delay: 10
+  until: tw_health.stdout == "healthy"
   when: state == "off"
 
 - name: Show maintenance off message

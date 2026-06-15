@@ -1,0 +1,216 @@
+---
+# Usage:
+#   ansible-playbook playbooks/healthcheck.yml
+#   ansible-playbook playbooks/healthcheck.yml -e backup_max_age_hours=24 -e disk_usage_threshold=80
+#
+# Unlike status.yml (informational), this playbook FAILS when something is wrong.
+# Suitable for monitoring and alerting.
+
+# ── Docker containers ──
+
+- name: Check that TaxonWorks container is running
+  become: true
+  become_user: tw
+  shell: docker compose ps --format json tw
+  args:
+    chdir: /app
+  register: tw_container
+  changed_when: false
+
+- name: Verify TaxonWorks container is healthy
+  assert:
+    that:
+      - "'running' in tw_container.stdout"
+    fail_msg: "FAIL: TaxonWorks container is not running"
+    success_msg: "OK: TaxonWorks container is running"
+
+- name: Check that PostgreSQL container is running
+  become: true
+  become_user: tw
+  shell: docker compose ps --format json db
+  args:
+    chdir: /app
+  register: db_container
+  changed_when: false
+
+- name: Verify PostgreSQL container is healthy
+  assert:
+    that:
+      - "'running' in db_container.stdout"
+    fail_msg: "FAIL: PostgreSQL container is not running"
+    success_msg: "OK: PostgreSQL container is running"
+
+# ── Services inside the TaxonWorks container ──
+
+- name: Check that nginx is running inside container
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 pgrep -x nginx
+  args:
+    chdir: /app
+  register: nginx_proc
+  changed_when: false
+  failed_when: false
+
+- name: Verify nginx is running
+  assert:
+    that:
+      - nginx_proc.rc == 0
+    fail_msg: "FAIL: nginx is not running inside the TaxonWorks container"
+    success_msg: "OK: nginx is running"
+
+- name: Check that Redis is running inside container
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 pgrep -x redis-server
+  args:
+    chdir: /app
+  register: redis_proc
+  changed_when: false
+  failed_when: false
+
+- name: Verify Redis is running
+  assert:
+    that:
+      - redis_proc.rc == 0
+    fail_msg: "FAIL: Redis is not running inside the TaxonWorks container"
+    success_msg: "OK: Redis is running"
+
+- name: Check that Delayed Job worker is running inside container
+  become: true
+  become_user: tw
+  shell: docker exec -i app-tw-1 pgrep -f 'jobs:work'
+  args:
+    chdir: /app
+  register: dj_proc
+  changed_when: false
+  failed_when: false
+
+- name: Verify Delayed Job worker is running
+  assert:
+    that:
+      - dj_proc.rc == 0
+    fail_msg: "FAIL: Delayed Job worker is not running inside the TaxonWorks container"
+    success_msg: "OK: Delayed Job worker is running"
+
+# ── Application health ──
+
+- name: Check TaxonWorks API health endpoint
+  become: true
+  become_user: tw
+  uri:
+    url: "http://localhost:{{ tw_port }}/api/v1/ping"
+    return_content: yes
+    timeout: 10
+  register: health_ping
+
+- name: Check that TaxonWorks can connect to the database
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 bin/rails runner -e production "ActiveRecord::Base.connection.execute('SELECT 1')"
+  args:
+    chdir: /app
+  register: db_connection
+  changed_when: false
+
+- name: Check that Redis is reachable from the application
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 bin/rails runner -e production "Redis.new.ping"
+  args:
+    chdir: /app
+  register: redis_connection
+  changed_when: false
+
+# ── Database state ──
+
+- name: Check for pending migrations
+  become: true
+  become_user: tw
+  command: docker exec -i app-tw-1 bin/rails db:abort_if_pending_migrations RAILS_ENV=production
+  args:
+    chdir: /app
+  register: migration_check
+  changed_when: false
+  failed_when: false
+
+- name: Verify no pending migrations
+  assert:
+    that:
+      - migration_check.rc == 0
+    fail_msg: "FAIL: There are pending database migrations"
+    success_msg: "OK: Database migrations are up to date"
+
+- name: Check PostgreSQL is accepting connections
+  become: true
+  become_user: tw
+  command: docker exec -i app-db-1 pg_isready -U taxonworks_production
+  args:
+    chdir: /app
+  register: pg_ready
+  changed_when: false
+
+- name: Verify PostgreSQL is ready
+  assert:
+    that:
+      - pg_ready.rc == 0
+    fail_msg: "FAIL: PostgreSQL is not accepting connections"
+    success_msg: "OK: PostgreSQL is accepting connections"
+
+# ── Backups ──
+
+- name: Find most recent backup
+  become: true
+  become_user: tw
+  shell: ls -t /backups/*.dump 2>/dev/null | head -1
+  register: latest_backup
+  changed_when: false
+  failed_when: false
+
+- name: Verify a backup exists
+  assert:
+    that:
+      - latest_backup.stdout | length > 0
+    fail_msg: "FAIL: No database backups found in /backups"
+    success_msg: "OK: Backups exist (latest: {{ latest_backup.stdout }})"
+
+- name: Check age of most recent backup
+  become: true
+  become_user: tw
+  shell: "echo $(( ($(date +%s) - $(stat -c '%Y' '{{ latest_backup.stdout }}')) / 3600 ))"
+  register: backup_age_hours
+  changed_when: false
+  when: latest_backup.stdout | length > 0
+
+- name: Verify backup is recent
+  assert:
+    that:
+      - backup_age_hours.stdout | int <= backup_max_age_hours | int
+    fail_msg: "FAIL: Most recent backup is {{ backup_age_hours.stdout }} hours old (threshold: {{ backup_max_age_hours }}h)"
+    success_msg: "OK: Most recent backup is {{ backup_age_hours.stdout }} hours old"
+  when: latest_backup.stdout | length > 0
+
+# ── Disk usage ──
+
+- name: Check disk usage on key filesystems
+  shell: df --output=pcent,target / /backups /var/lib/taxonworks 2>/dev/null | tail -n +2
+  register: disk_usage
+  changed_when: false
+  failed_when: false
+
+- name: Parse disk usage percentages
+  set_fact:
+    _disk_over_threshold: "{{ disk_usage.stdout_lines | map('trim') | select('match', '^[0-9]') | map('regex_replace', '([0-9]+)%.*', '\\1') | map('int') | select('gt', disk_usage_threshold | int) | list }}"
+
+- name: Verify disk usage is within threshold
+  assert:
+    that:
+      - _disk_over_threshold | length == 0
+    fail_msg: "FAIL: Disk usage exceeds {{ disk_usage_threshold }}% on one or more filesystems"
+    success_msg: "OK: All filesystems under {{ disk_usage_threshold }}% usage"
+
+# ── Summary ──
+
+- name: All health checks passed
+  debug:
+    msg: "All health checks passed."

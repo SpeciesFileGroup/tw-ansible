@@ -74,16 +74,15 @@
   args:
     chdir: /app
 
-- name: Wait for TaxonWorks to be up
+- name: Wait for TaxonWorks to be healthy
   become: true
   become_user: tw
-  wait_for:
-    port: "{{ tw_port }}"
-    delay: 10
-    timeout: 600
-    state: started
-  register: result
-  until: result is succeeded
+  command: docker inspect --format '{{ "{{" }} .State.Health.Status {{ "}}" }}' app-tw-1
+  register: tw_health
+  changed_when: false
+  retries: 120
+  delay: 10
+  until: tw_health.stdout == "healthy"
 
 - name: Show configuration summary
   debug:

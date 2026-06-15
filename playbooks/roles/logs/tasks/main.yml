@@ -11,23 +11,23 @@
     _log: "{{ log | default('production') }}"
 
 - name: Tail log file
-  become: true
-  become_user: tw
   command: "tail -n {{ _lines }} /var/lib/taxonworks/logs/{{ _log }}.log"
   register: log_output
   changed_when: false
-  failed_when: false
   when: grep is not defined
 
 - name: Grep log file
-  become: true
-  become_user: tw
-  shell: "grep -i '{{ grep }}' /var/lib/taxonworks/logs/{{ _log }}.log | tail -n {{ _lines }}"
+  shell: "set -o pipefail; grep -i -- {{ grep | quote }} /var/lib/taxonworks/logs/{{ _log }}.log | tail -n {{ _lines }}"
+  args:
+    executable: /bin/bash
   register: grep_output
   changed_when: false
-  failed_when: false
+  failed_when: grep_output.rc not in [0, 1]
   when: grep is defined
 
 - name: Show log output
   debug:
-    msg: "{{ (log_output.stdout_lines | default(grep_output.stdout_lines | default(['No output']))) }}"
+    msg: >-
+      {{ log_output.stdout_lines if grep is not defined
+         else (grep_output.stdout_lines if grep_output.stdout_lines | length > 0
+               else ['No matches for ' ~ grep ~ ' in /var/lib/taxonworks/logs/' ~ _log ~ '.log']) }}

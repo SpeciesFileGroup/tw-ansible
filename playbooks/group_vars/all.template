@@ -9,7 +9,10 @@ tw_cpus_limit: 4     # Number of CPUs for the TaxonWorks container
 tw_branch: "master"  # (master = production)
 tw_port: 80
 
-# tw_admin creates the first TaxonWorks admin user. Note: only runs if the database_init_mode is "initialize"
+# tw_admin creates the first TaxonWorks admin user.
+# Used by database_init_mode "initialize" (answered to the interactive rake task)
+# and by database_init_mode "empty" (created via rails runner after migrations).
+# Ignored by database_init_mode "restore" (users come from the backup).
 tw_admin:
   name: 
   email: 
@@ -22,7 +25,7 @@ tw_users:
     password: 
     admin: true
 enable_firewall: false  # Set to true to configure the firewall (blocks all incoming ports except SSH and TaxonWorks)
-postgres_password: 
+postgres_password:   # Generate with: openssl rand -hex 32
 postgres_pool_size: 5
 postgres_cpus_limit: 4
 postgres_memory_limit: 8G
@@ -32,8 +35,8 @@ postgres_shm_size: 8G
 database_init_mode: "restore"  # Options: "empty", "restore", "initialize"
 # database_restore_file: "tw_backup_2024_06_12.sql.gz"  # The path to the database_restore_file is required if database_init_mode == "restore"
 
-nginx_secret_key: 
-secret_key_base: 
+nginx_secret_key:   # Generate with: openssl rand -hex 64
+secret_key_base:    # Generate with: openssl rand -hex 64
 # Email delivery settings
 #
 # TaxonWorks sends email for password resets, user invitations, and exception

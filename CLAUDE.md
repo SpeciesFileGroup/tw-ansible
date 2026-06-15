@@ -14,7 +14,8 @@ playbooks/
   upgrade.yml               # Playbook: upgrade existing TaxonWorks to new version
   restart.yml               # Playbook: restart containers without upgrading
   rollback.yml              # Playbook: roll back to a specific version
-  status.yml                # Playbook: health check and status report
+  status.yml                # Playbook: informational status overview (never fails)
+  healthcheck.yml           # Playbook: pass/fail health check (fails if unhealthy)
   backup.yml                # Playbook: on-demand database backup
   restore.yml               # Playbook: restore database from backup
   backup-offsite.yml        # Playbook: copy backups to remote destination
@@ -34,6 +35,7 @@ playbooks/
     restart/                # Role: restart Docker containers
     rollback/               # Role: pin to specific image tag and git ref
     status/                 # Role: container state, disk, backups, migrations, log errors
+    healthcheck/            # Role: pass/fail checks on all services, DB, backups, disk
     backup/                 # Role: run tw:db:dump
     restore/                # Role: restore from .dump file
     backup-offsite/         # Role: rsync or S3 sync of /backups
@@ -59,7 +61,7 @@ playbooks/
 
 ## How TaxonWorks runs in production
 
-- TaxonWorks runs as a Docker container (`sfgrp/taxonworks:latest`) alongside a PostGIS container (`postgis/postgis:12-3.4`).
+- TaxonWorks runs as a Docker container (`sfgrp/taxonworks:latest`) alongside a PostGIS container (`postgis/postgis:17-3.5`).
 - Docker volumes mount host directories for logs, public files, downloads, postgres data, backups, and staging.
 - On container startup, the TaxonWorks init script (`config/docker/nginx/init.sh` in the TaxonWorks repo) automatically backs up the database and runs migrations. If a migration fails it auto-restores from the backup.
 - A cron job runs nightly database backups via `tw:db:dump`.

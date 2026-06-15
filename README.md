@@ -33,7 +33,8 @@ ensure you understand what they do.
 | `upgrade.yml` | Upgrade TaxonWorks to the latest version |
 | `restart.yml` | Restart containers without upgrading |
 | `rollback.yml` | Roll back to a specific version |
-| `status.yml` | Health check (containers, disk, backups, migrations, errors) |
+| `status.yml` | Status overview (informational, never fails) |
+| `healthcheck.yml` | Health check (fails if any service or check is unhealthy) |
 | `ssl.yml` | Set up Let's Encrypt SSL/TLS certificates |
 | `maintenance.yml` | Toggle maintenance mode on/off |
 | `migrate.yml` | Run database migrations independently |
@@ -169,6 +170,18 @@ ansible-playbook -i ./hosts playbooks/rollback.yml --user tw --ask-pass --ask-be
 
 ```sh
 ansible-playbook -i ./hosts playbooks/status.yml --user tw --ask-pass --ask-become-pass
+```
+
+### Health check
+
+Unlike `status.yml` which is informational, `healthcheck.yml` **fails** when something is wrong. It checks containers, internal services (nginx, Redis, Delayed Job), database connectivity, API health, backup recency, and disk usage.
+
+```sh
+ansible-playbook -i ./hosts playbooks/healthcheck.yml --user tw --ask-pass --ask-become-pass
+
+# Customize thresholds
+ansible-playbook -i ./hosts playbooks/healthcheck.yml --user tw --ask-pass --ask-become-pass \
+  -e backup_max_age_hours=24 -e disk_usage_threshold=80
 ```
 
 ### Backup and restore

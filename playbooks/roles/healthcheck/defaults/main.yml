@@ -1,0 +1,6 @@
+---
+# Maximum age of the most recent backup in hours before it's considered stale
+backup_max_age_hours: 48
+
+# Disk usage percentage threshold (fails if any monitored filesystem exceeds this)
+disk_usage_threshold: 90

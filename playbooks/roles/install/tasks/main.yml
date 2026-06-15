@@ -217,6 +217,28 @@
     mode: '0644'
     backup: no
 
+- name: Copy maintenance.html to public directory
+  become: true
+  become_user: root
+  template:
+    src: maintenance.html
+    dest: /var/lib/taxonworks/public/maintenance.html
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
+- name: Copy maintenance.nginx.conf to config directory
+  become: true
+  become_user: root
+  template:
+    src: maintenance.nginx.conf
+    dest: /app/config/maintenance.nginx.conf
+    owner: tw
+    group: tw
+    mode: '0644'
+    backup: no
+
 - name: Run docker compose down
   become: true
   become_user: tw
@@ -240,16 +262,15 @@
   args:
     chdir: /app
 
-- name: Wait for TaxonWorks to be up
+- name: Wait for TaxonWorks to be healthy
   become: true
   become_user: tw
-  wait_for:
-    port: "{{ tw_port }}"
-    delay: 10
-    timeout: 600
-    state: started
-  register: result
-  until: result is succeeded
+  command: docker inspect --format '{{ "{{" }} .State.Health.Status {{ "}}" }}' app-tw-1
+  register: tw_health
+  changed_when: false
+  retries: 120
+  delay: 10
+  until: tw_health.stdout == "healthy"
 
 - name: Set log ownership
   become: true
@@ -454,6 +475,19 @@
     cron_file: "/etc/cron.d/{{ item.file_name }}"
   loop: "{{ cron_jobs }}"
   when: cron_jobs is defined
+
+- name: "Empty Mode: Create admin user from tw_admin"
+  become: true
+  become_user: tw
+  command: >
+    docker exec -i app-tw-1 bin/rails runner -e production "User.create!(name: '{{ tw_admin.name }}', email: '{{ tw_admin.email }}', password: '{{ tw_admin.password }}', password_confirmation: '{{ tw_admin.password }}', is_administrator: true, self_created: true) unless User.find_by(email: '{{ tw_admin.email }}');"
+  args:
+    chdir: /app
+  when:
+    - database_init_mode == "empty"
+    - tw_admin is defined
+    - tw_admin.email | default('') != ''
+    - tw_admin.password | default('') != ''
 
 - name: Connect to rails console and create users
   become: true

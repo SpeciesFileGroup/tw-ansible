@@ -15,10 +15,17 @@
   args:
     chdir: /app
 
-- name: Stop TaxonWorks containers
+- name: Stop TaxonWorks container
   become: true
   become_user: tw
-  command: docker compose down
+  command: docker compose stop tw
+  args:
+    chdir: /app
+
+- name: Start maintenance sidecar
+  become: true
+  become_user: tw
+  command: docker compose --profile maintenance up -d maintenance
   args:
     chdir: /app
 
@@ -58,6 +65,13 @@
     RAILS_ENV: production
   when: restore_backup is defined
 
+- name: Stop maintenance sidecar
+  become: true
+  become_user: tw
+  command: docker compose stop maintenance
+  args:
+    chdir: /app
+
 - name: Start TaxonWorks containers
   become: true
   become_user: tw
@@ -65,16 +79,15 @@
   args:
     chdir: /app
 
-- name: Wait for TaxonWorks to be up
+- name: Wait for TaxonWorks to be healthy
   become: true
   become_user: tw
-  wait_for:
-    port: "{{ tw_port }}"
-    delay: 10
-    timeout: 600
-    state: started
-  register: result
-  until: result is succeeded
+  command: docker inspect --format '{{ "{{" }} .State.Health.Status {{ "}}" }}' app-tw-1
+  register: tw_health
+  changed_when: false
+  retries: 120
+  delay: 10
+  until: tw_health.stdout == "healthy"
 
 - name: Show rollback result
   debug:

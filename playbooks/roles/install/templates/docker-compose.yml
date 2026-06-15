@@ -56,8 +56,17 @@ services:
 {% endif %}
     stdin_open: true
     tty: true
+  maintenance:
+    image: nginx:alpine
+    restart: "no"
+    profiles: ["maintenance"]
+    ports:
+      - '0.0.0.0:80:80'
+    volumes:
+      - /var/lib/taxonworks/public/maintenance.html:/usr/share/nginx/html/maintenance.html:ro
+      - /app/config/maintenance.nginx.conf:/etc/nginx/conf.d/default.conf:ro
   db:
-    image: postgis/postgis:12-3.4
+    image: postgis/postgis:17-3.5
     restart: unless-stopped
     deploy:
       resources:
